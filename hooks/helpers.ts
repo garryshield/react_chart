@@ -1,4 +1,14 @@
 import axios from "axios";
+import { sdk } from "./datafeed";
+import { TokenRankingAttribute, RankingDirection } from "@definedfi/sdk/dist/sdk/generated/graphql";
+
+// Generate a symbol ID from a pair of the coins
+export const generateSymbol = async (phrase: string) => {
+  const symbols = await sdk.queries.filterTokens({
+  });
+  console.log("generateSymbol", symbols);
+}
+
 export const intervals: { [key: string]: string } = {
 	'1': '1m',
 	'3': '3m',
@@ -6,7 +16,6 @@ export const intervals: { [key: string]: string } = {
 	'15': '15m',
 	'30': '30m',
 	'60': '1h',
-	'120': '2h',
 	'240': '4h',
 	'360': '6h',
 	'480': '8h',
@@ -20,18 +29,17 @@ export const intervals: { [key: string]: string } = {
 	'1M': '1M',
 }
 
+export const checkInterval = (interval: string) => !!intervals[interval]
+
 // Make requests to CryptoCompare API
-export async function makeApiRequest(getBarQuery: string) {
+export async function makeApiRequest(query: string, variables: any) {
   try {
     const url = "https://graph.defined.fi/graphql";
     const headers = {
       "Content-type": "application/json",
       Authorization: "02d56ee969a64918856f696cdfd130b1de5c40d3",
     };
-    const data = {
-      query: getBarQuery,
-    };
-    const response = await axios.post(url, data, { headers });
+    const response = await axios.post(url, JSON.stringify({query, variables}), { headers });
     return response.data;
   } catch (error: Error | any) {
     throw new Error(`CryptoCompare request error: ${error.status}`);
@@ -85,15 +93,6 @@ export function formatBars(response: any) {
   return df;
 }
 
-// Generate a symbol ID from a pair of the coins
-export function generateSymbol(exchange: string, fromSymbol: string, toSymbol: string) {
-  const short = `${fromSymbol}/${toSymbol}`;
-  return {
-    short,
-    full: `${exchange}:${short}`,
-  };
-}
-
 export function parseFullSymbol(fullSymbol: string) {
   const match = fullSymbol.match(/^(\w+):(\w+)\/(\w+)$/);
   if (!match) {
@@ -106,5 +105,3 @@ export function parseFullSymbol(fullSymbol: string) {
     toSymbol: match[3],
   };
 }
-
-export const checkInterval = (interval: string) => !!intervals[interval]

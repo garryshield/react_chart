@@ -5,27 +5,22 @@ import {
   PeriodParams,
   ResolutionString,
   ResolveCallback,
+  SearchSymbolsCallback,
   SubscribeBarsCallback,
 } from "@/public/static/charting_library";
-import { makeApiRequest, checkInterval, intervals } from "./helpers";
+import {
+  makeApiRequest,
+  checkInterval,
+  intervals,
+  generateSymbol,
+} from "./helpers";
 import timestring from "timestring";
 
 export var lastCandleTime: number = 0;
+let searchSymbol: any;
+let selectSymbol: any;
 
-const sdk = new Defined("02d56ee969a64918856f696cdfd130b1de5c40d3");
-
-const url = new URL(window.location.href);
-const params = new URLSearchParams(url.search);
-let chain = params.get("chain");
-let resolution = params.get("resolution");
-let token_id = params.get("token_id");
-let token_name = params.get("token_name");
-let quoteToken = params.get("quote_token");
-
-const chain_dict: { [key: string]: number } = { eth: 1, sol: 1399811149 };
-const chain_id =
-  chain_dict[Object.keys(chain_dict).find((net) => chain === net)!];
-const token_symbol = `${token_id}:${chain_id}`;
+export const sdk = new Defined("02d56ee969a64918856f696cdfd130b1de5c40d3");
 
 const configurationData = {
   supported_resolutions: [
@@ -34,7 +29,6 @@ const configurationData = {
     "15",
     "30",
     "60",
-    "120",
     "240",
     "1D",
     "1W",
@@ -47,66 +41,52 @@ const configurationData = {
 
 export function formatBars(response: any) {
   const data = response.data;
+  let dfArray: any[] = [];
   if (data && data.getBars) {
     var df = data.getBars;
 
     // Remove rows with null/undefined values in 'v' and 'c'
     lastCandleTime = df.t[0] as number;
-    console.log(df);
-    let dfArray = df.c.map((cValue: number, index: number) => ({
+
+    dfArray = df.c.map((cValue: number, index: number) => ({
       c: cValue,
       v: df.v[index],
       h: df.h[index],
       l: df.l[index],
       o: df.o[index],
       t: df.t[index],
-      s: df.s[index],
     }));
 
     // Filter the array to remove rows where either c or v is null
     dfArray = dfArray.filter((row: any, index: number) => {
-      const prevRow = index == 0 ? dfArray[0] : dfArray[index - 1];
+      let prevRow: any;
+      if (index == 0) {
+        prevRow = dfArray[0];
+        return dfArray[0];
+      } else {
+        prevRow = dfArray[index - 1];
+      }
+
       if (
         row.v == null ||
         row.c == null ||
-        (row.v == 0 && row.o == row.h && row.o == row.l && row.o == row.c)
+        (prevRow.o == row.o &&
+          prevRow.h == row.h &&
+          prevRow.l == row.l &&
+          prevRow.c == row.c &&
+          row.o == row.h &&
+          row.o == row.l &&
+          row.o == row.c)
+        // (row.v == 0 && row.o == row.h && row.o == row.l && row.o == row.c)
       )
+        // check volume and compare current volume and prev volume
         return;
-      // if (
-      //   // (prevRow.o !== row.o ||
-      //   //   prevRow.h !== row.h ||
-      //   //   prevRow.l !== row.l ||
-      //   //   prevRow.c !== row.c ||
-      //   //   prevRow.v !== row.v)
-      // )
-      //   return row;
       return row;
     });
-
-    // If needed, convert the filtered array back to the original structure
-    df = {
-      c: dfArray.map((row: any) => row.c),
-      v: dfArray.map((row: any) => row.v),
-      h: dfArray.map((row: any) => row.h),
-      l: dfArray.map((row: any) => row.l),
-      o: dfArray.map((row: any) => row.o),
-      t: dfArray.map((row: any) => row.t),
-      s: dfArray.map((row: any) => row.s),
-    };
-
-    df = df.t.map((t: number, index: number) => ({
-      close: df.c[index],
-      high: df.h[index],
-      low: df.l[index],
-      open: df.o[index],
-      time: t, // Assuming time in seconds; no need to divide by 1000
-      volume: df.v[index],
-      status: "ok", // Assuming you may want to keep 's' field.
-    }));
   } else {
-    df = [];
+    dfArray = [];
   }
-  return df;
+  return dfArray;
 }
 
 export default {
@@ -119,10 +99,57 @@ export default {
     userInput: string,
     exchange: string,
     symbolType: string,
-    onResultReadyCallback: Function
+    onResultReadyCallback: SearchSymbolsCallback
   ) => {
-    const symbols = userInput.toLowerCase() === "WETHUSD" ? ["WETHUSD"] : [];
-    onResultReadyCallback(symbols);
+    console.log(
+      "[onSearchSymbols]: Method call",
+      userInput,
+      exchange,
+      symbolType
+    );
+
+    const searchSymbols = (symbols: any) => {
+      if (symbols == null || symbols.length == 0) return [];
+      const symbolInfo = symbols.map((symbol: any) => {
+        const chainlogo =
+          symbol.token.networkId == 1 ? "/ethereum.png" : "/solana.png";
+        const network = symbol.token.networkId == 1 ? "ethereum" : "solana";
+
+        const filterSymbol = {
+          symbol: symbol.token.symbol + "/" + network,
+          description: symbol.token.name,
+          exchange: symbol.exchanges[0].name,
+          ticker: symbol.token.symbol + ":" + network,
+          type: "crypto",
+          logo_urls: [symbol.token.imageLargeUrl, chainlogo],
+          exchange_logo: symbol.exchanges[0].iconUrl,
+        };
+        return filterSymbol;
+      });
+      return symbolInfo;
+    };
+
+    const query = `query FilterTokens($filters: TokenFilters, $statsType: TokenPairStatisticsType, $phrase: String, $tokens: [String], $rankings: [TokenRanking], $limit: Int, $offset: Int) {\n  filterTokens(\n    filters: $filters\n    statsType: $statsType\n    phrase: $phrase\n    tokens: $tokens\n    rankings: $rankings\n    limit: $limit\n    offset: $offset\n  ) {\n    results {\n      exchanges {\n        ...ExchangeModel\n        __typename\n      }\n      liquidity\n     pair {\n        ...PairModel\n        __typename\n      }\n      priceUSD\n      quoteToken\n     token {\n        address\n        decimals\n        id\n        name\n        networkId\n        symbol\n        isScam\n        imageThumbUrl\n        imageSmallUrl\n        imageLargeUrl\n        info {\n          ...BaseTokenInfo\n          __typename\n        }\n        __typename\n      }\n      volume1\n      volume12\n      volume24\n      volume4\n      __typename\n    }\n    count\n    page\n    __typename\n  }\n}\n\nfragment ExchangeModel on Exchange {\n  address\n  color\n  exchangeVersion\n  id\n  name\n  networkId\n  tradeUrl\n  iconUrl\n  enabled\n  __typename\n}\n\nfragment PairModel on Pair {\n  address\n  exchangeHash\n  fee\n  id\n  networkId\n  tickSpacing\n  token0\n  token1\n  __typename\n}\n\nfragment BaseTokenInfo on TokenInfo {\n  address\n  circulatingSupply\n  id\n  imageLargeUrl\n  imageSmallUrl\n  imageThumbUrl\n  isScam\n  name\n  networkId\n  symbol\n  totalSupply\n  description\n  __typename\n}`;
+    const variables = {
+      filters: {
+        network: [1, 1399811149],
+        volume24: { gte: 1000 },
+      },
+      phrase: `${userInput}`,
+      rankings: [{ attribute: "volume24", direction: "DESC" }],
+      limit: 10,
+      statsType: "FILTERED",
+    };
+
+    const { data } = await makeApiRequest(query, variables);
+    console.log(data);
+    
+    if (data == null || data == undefined) onResultReadyCallback([]);
+
+    const results = searchSymbols(data?.filterTokens.results);
+    searchSymbol = data?.filterTokens.results;
+
+    onResultReadyCallback(results);
   },
 
   resolveSymbol: async (
@@ -131,33 +158,49 @@ export default {
     onResolveErrorCallback: Function
   ) => {
     try {
+      console.log("[onResolveSymbol]: Method call", symbolName, searchSymbol);
+
+      const splitSymbol = symbolName.split(":");
+      const networkId = splitSymbol[1] == "ethereum" ? 1 : 1399811149;
+      const filterNetwork = searchSymbol.filter(
+        (symbol: any) => symbol.token.networkId == networkId
+      );
+      const symbol = filterNetwork.find(
+        (symbol: any) => symbol.token.symbol == splitSymbol[0]
+      );
+
+      const chainlogo =
+        symbol.token.networkId == 1 ? "/ethereum.png" : "/solana.png";
+
       const symbolInfo: LibrarySymbolInfo = {
-        ticker: token_name!,
-        name: token_name!,
-        // base_name: "WETH:USD",
-        description: token_name!.toUpperCase(),
+        ticker: symbol.token.symbol + "/" + splitSymbol[1],
+        name: symbol.token.symbol,
+        description: symbol.token.name + " on " + splitSymbol[1].toUpperCase(),
+        logo_urls: [symbol.token.imageLargeUrl],
+        exchange_logo: symbol.exchanges[0].iconUrl,
         timezone: "Etc/UTC",
-        exchange: "dexscreener.com", // "eth".toUpperCase() + "_TEST1",
+        exchange: symbol.exchanges[0].name,
         minmov: 1,
-        listed_exchange: "Uniswap",
+        listed_exchange: symbol.exchanges[0].name,
         format: "price",
-        pricescale: 100000000000,
+        pricescale: 1000000000000,
         supported_resolutions: [
           "1",
           "5",
           "15",
           "30",
           "60",
-          "120",
           "240",
           "1D",
         ] as ResolutionString[],
         type: "crypto",
         session: "24x7",
         has_intraday: true,
-        volume_precision: 8,
+        volume_precision: 1,
         data_status: "streaming",
       };
+      selectSymbol = symbol;
+
       onSymbolResolvedCallback(symbolInfo);
     } catch (error) {
       onResolveErrorCallback("[resolveSymbol]: symbol not found", error);
@@ -165,7 +208,6 @@ export default {
   },
 
   // get historical data for the symbol
-  // https://github.com/tradingview/charting_library/wiki/JS-Api#getbarssymbolinfo-resolution-periodparams-onhistorycallback-onerrorcallback
   getBars: async (
     symbolInfo: LibrarySymbolInfo,
     resolution: ResolutionString,
@@ -175,70 +217,63 @@ export default {
   ) => {
     console.log("[getBars] Method call");
 
-    if (!checkInterval(resolution) || !chain) {
+    if (!checkInterval(resolution)) {
       return onErrorCallback("[getBars] Invalid interval");
     }
 
     const { to, firstDataRequest } = periodParams;
     const period = intervals[resolution];
-    console.log(to, firstDataRequest, resolution);
 
-    if (periodParams.firstDataRequest) lastCandleTime = 0;
+    if (firstDataRequest) lastCandleTime = 0;
     const toTime = lastCandleTime == 0 ? to : lastCandleTime;
     const fromTime = to - timestring(period) * 600;
+    console.log(fromTime, toTime, firstDataRequest);
+
     try {
-      const getTokenInfo = `query {
-        getBars(
-          symbol: "${token_symbol}"
-          quoteToken: ${quoteToken}
-          from: ${fromTime}
-          to: ${toTime}
-          statsType: FILTERED
-          removeLeadingNullValues: true
-          resolution: "${resolution}"
-          currencyCode:"USD"
-        ) {
-          c
-          h
-          l
-          o
-          t
-          v
-          s
-        }
-      }`;
-      const getBarQuery = getTokenInfo;
-      var data = await makeApiRequest(getBarQuery);
+      const query =
+        "query GetBars($countback: Int, $symbol: String!, $from: Int!, $to: Int!, $resolution: String!, $currencyCode: String, $quoteToken: QuoteToken, $statsType: TokenPairStatisticsType, $removeLeadingNullValues: Boolean, $removeEmptyBars: Boolean) {\n  getBars(\n    symbol: $symbol\n    from: $from\n    to: $to\n    resolution: $resolution\n    currencyCode: $currencyCode\n    quoteToken: $quoteToken\n    statsType: $statsType\n    countback: $countback\n    removeLeadingNullValues: $removeLeadingNullValues\n    removeEmptyBars: $removeEmptyBars\n ) {\n    s\n    o\n    h\n    l\n    c\n    t\n    v\n    __typename\n  }\n}";
+      const variables = {
+        countback: 600,
+        symbol: selectSymbol.pair.id,
+        quoteToken: selectSymbol.quoteToken,
+        from: fromTime,
+        to: toTime,
+        statsType: `FILTERED`,
+        removeEmptyBars: false,
+        removeLeadingNullValues: true,
+        resolution: resolution,
+        currencyCode: "USD",
+      };
+
+      var data = await makeApiRequest(query, variables);
       var formattedData = formatBars(data);
+      console.log(formattedData);
       if (
         (data.Response && data.Response === "Error") ||
         formattedData.length === 0
       ) {
         // "noData" should be set if there is no data in the requested period.
-        onHistoryCallback([], {
-          noData: true,
-        });
+        onHistoryCallback([], { noData: true });
         return;
       }
       let bars: any = [];
       formattedData.forEach((bar: any) => {
-        if (bar.time >= fromTime && bar.time < to) {
+        if (bar.t >= fromTime && bar.t < to) {
           bars = [
             ...bars,
             {
-              time: bar.time * 1000,
-              low: bar.low,
-              high: bar.high,
-              open: bar.open,
-              close: bar.close,
-              volume: bar.volume,
+              time: bar.t * 1000,
+              low: bar.l,
+              high: bar.h,
+              open: bar.o,
+              close: bar.c,
+              volume: bar.v,
             },
           ];
         }
       });
 
       onHistoryCallback(bars, { noData: false });
-
       return;
     } catch (error) {
       console.log("[getBars]: Get error", error);
@@ -255,7 +290,7 @@ export default {
   ) => {
     console.log(
       "[subscribeBars]: Method call with subscribeUID:",
-      subscriberUID
+      selectSymbol
     );
 
     sdk.subscribe(
@@ -276,7 +311,7 @@ export default {
                   h
                   l
                   c
-                  volume
+                  v
                 }
                 token {
                   t
@@ -284,7 +319,7 @@ export default {
                   h
                   l
                   c
-                  volume
+                  v
                 }
               }
             }
@@ -292,8 +327,8 @@ export default {
         }
       `,
       {
-        pairId: token_symbol,
-        quoteToken: quoteToken,
+        pairId: selectSymbol.pair.id,
+        quoteToken: selectSymbol.quoteToken,
       },
       {
         next({ data }: any) {
@@ -305,10 +340,10 @@ export default {
             high: value.h,
             open: value.o,
             close: value.c,
-            volume: parseFloat(value.volume),
+            volume: value.v,
           };
-          // onRealtimeCallback(last);
-          if (parseFloat(value.volume) > 0) onRealtimeCallback(last);
+
+          if (value.v > 0) onRealtimeCallback(last);
           else onResetCacheNeededCallback();
         },
         complete() {

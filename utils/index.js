@@ -36,7 +36,7 @@ const subscripts = [
 
 export function prettyNumber(price) {
   if (price > 1) return price.toFixed(2);
-  else if (price > 0.0001 || price == 0) return price.toFixed(5);
+  else if (price > 0.0001 || price == 0) return price.toFixed(6);
 
   let i = 0;
   let splitted = prettyNum(price.toString()).split(".");
@@ -46,9 +46,15 @@ export function prettyNumber(price) {
   }
 
   const removed = splitted[1].slice(i);
-  const last = removed.slice(0, 4);
+  let last = removed.slice(0, 4);
+  let l = last.length;
+  while (l < 4) {
+    last += "0";
+    l++;
+  }
+  // console.log("---", last, i);
 
   if (i > 3) return `${splitted[0]}.0${subscripts[i].sub}${last}`;
 
-  return price.toFixed(5);
+  return price.toFixed(6);
 }

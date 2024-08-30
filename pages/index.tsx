@@ -9,12 +9,16 @@ import {
 } from "@/public/static/charting_library";
 
 const defaultWidgetProps: Partial<ChartingLibraryWidgetOptions> = {
-  symbol: "WETHUSD",
+  symbol: "Wrapped Ether",
   interval: "60" as ResolutionString,
   library_path: "/static/charting_library/",
   // charts_storage_url: "http://saveload.tradingview.com",
   charts_storage_api_version: "1.1",
-  enabled_features: ["saveload_separate_drawings_storage"],
+  enabled_features: [
+    "saveload_separate_drawings_storage",
+    "show_symbol_logos",
+    "show_exchange_logos",
+  ],
   load_last_chart: true,
   client_id: "tradingview.com",
   user_id: "public_user_id",

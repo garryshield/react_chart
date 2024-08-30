@@ -33,6 +33,11 @@ export const TVChartContainer = (
       fullscreen: props.fullscreen,
       autosize: props.autosize,
       theme: props.theme,
+      overrides: {
+        "paneProperties.background": "#000001",
+        "paneProperties.backgroundType": "solid",
+        "scalesProperties.fontSize": 14,
+      },
       custom_formatters: {
         priceFormatterFactory: (symbolInfo, minTick) => {
           if (symbolInfo === null) {
